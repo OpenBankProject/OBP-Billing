@@ -1,2 +1,2 @@
 # OBP-Billing
-an framework for billing of API usage
+A framework for billing of API usage
