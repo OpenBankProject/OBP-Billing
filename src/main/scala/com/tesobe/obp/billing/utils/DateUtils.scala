@@ -28,12 +28,8 @@ object DateUtils {
 
   def buildRangeTime(fromDate: Date, toDate: Date = new Date()): Seq[Date] = {
     val secondDate: Date = addDate(fromDate, 1) // next day begin time: 00:00:00
-    if(secondDate.after(toDate)) {
-      List(fromDate, toDate)
-    } else {
-      val range = secondDate.getTime to (toDate.getTime, oneDayMs)
-      (fromDate.getTime +: range).map(new Date(_))
-    }
+    val range = secondDate.getTime to (toDate.getTime, oneDayMs)
+    fromDate +: range.map(new Date(_)) :+ toDate
   }
 
 

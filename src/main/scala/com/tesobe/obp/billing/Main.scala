@@ -5,7 +5,7 @@ import java.util.Date
 import com.tesobe.obp.billing.auth._
 import com.tesobe.obp.billing.utils.DateUtils._
 import com.tesobe.obp.billing.utils.HttpUtils.{buildNinjaRequest, collectNinjaJson, countNinjaElements, findOneNinjaJson, getObpJson, product_key, reduceLeftNinjaJson}
-import com.tesobe.obp.billing.utils.StringUtils.{decorateJsonValue, isNotEmptyStr}
+import com.tesobe.obp.billing.utils.StringUtils.{decorateJsonValue, isNotEmptyStr, isEmptyStr}
 import net.liftweb.json
 import net.liftweb.json.JInt
 
@@ -28,15 +28,23 @@ object Main {
 
 
   def buildInvoiceItems(dateTimeRange: Seq[Date], consumerId: String, ninjaProduct: NinjaProduct): List[InvoiceItem] = {
-    def getMetric(from: Date, to: Date): AggregateMetric = getObpJson[List[AggregateMetric]]("management/aggregate-metrics", "",
-      List(
-        ("consumer_id", consumerId),
-        ("from_date", toTimeStr(from)),
-        ("to_date", toTimeStr(to))
+    def getMetric(from: Date, to: Date): AggregateMetric = {
+      val fromDate = toTimeStr(from)
+      val toDate = toTimeStr(to)
+      println(s"Fetching metrics: consumer_id=$consumerId&from_date=$fromDate&to_date=$toDate")
+      val metrics = getObpJson[List[AggregateMetric]]("management/aggregate-metrics", "",
+        List(
+          ("consumer_id", consumerId),
+          ("from_date", fromDate),
+          ("to_date", toDate)
+        )
       )
-    ).head
+      println(s"Fetched metrics: $metrics")
+      metrics.head
+    }
 
-    if (getMetric(dateTimeRange.head, dateTimeRange.last).count == 0) {
+    val totalMetric = getMetric(dateTimeRange.head, dateTimeRange.last)
+    if (totalMetric.count == 0) {
       Nil
     } else {
       val days: List[(Date, Date)] = dateTimeRange.zip(dateTimeRange.tail).toList
@@ -52,29 +60,35 @@ object Main {
 
 
   def main(args: Array[String]): Unit = {
+    println("Fetching all obp consumers.")
     val consumers = getObpJson[List[Consumer]]("management/consumers", "consumers")
+    println(s"Got all obp consumers, count: ${consumers.size}")
 
+    println("Fetching all exists not deleted Ninja Clients.")
     // exists client corresponding consumerId, consumerId -> client_id
     val exitsClients = collectNinjaJson[Client, (String, Int), ClientsResponse]("clients") {
       case client if !client.is_deleted && isNotEmptyStr(client.custom_value1) => client.custom_value1 -> client.id
     }.toMap
 
+    println(s"Got all exists not deleted Ninja Clients, count: ${exitsClients.size}")
 
     def isConsumerNoClient(consumerId: String): Boolean = !exitsClients.contains(consumerId)
 
     // do create client
     val noClientConsumers = consumers.filter(it =>
-      isNotEmptyStr(it.consumer_id) &&
-        isNotEmptyStr(it.app_name) &&
+        isNotEmptyStr(it.consumer_id) &&
         isConsumerNoClient(it.consumer_id)
     )
 
+    println(s"Not created Ninja Client corresponding OBP Consumers: ${noClientConsumers.mkString("\n")}")
+
     val newClients = noClientConsumers
       .map(consumer => {
+        val appName = Option(consumer.app_name).filter(isNotEmptyStr).getOrElse(s"Empty name created by ${consumer.created_by_user.username}")
         val jsonForPost =
           s"""
              |{
-             |"name": "${decorateJsonValue(consumer.app_name)}",
+             |"name": "${decorateJsonValue(appName)}",
              |"public_notes": "${decorateJsonValue(consumer.description)}",
              |"custom_value1": "${consumer.consumer_id}",
              |"custom_value2": "${decorateJsonValue(consumer.description)}",
@@ -114,7 +128,8 @@ object Main {
 
     {
       println(s"start process of create invoice.")
-      val totalInvoices: Int = countNinjaElements[Invoice, InvoicesResponse]("invoices")
+      val invoiceNumberPrefix = "OBP-"
+      val totalInvoices: Int = countNinjaElements[Invoice, InvoicesResponse]("invoices", _.invoice_number.startsWith(invoiceNumberPrefix))
 
       for (((consumerId, clientId), index) <- consumerIdToClientId.view.zipWithIndex) {
         val newestInvoice = reduceLeftNinjaJson[Invoice, InvoicesResponse]("invoices", List("client_id" -> clientId))(getNewerInvoice)
@@ -127,7 +142,7 @@ object Main {
 
         val invoiceItems: List[InvoiceItem] = buildInvoiceItems(dateTimeRange, consumerId, ninjaProduct)
         if (invoiceItems.nonEmpty) {
-          val invoiceNumber = s"obp-${totalInvoices + index + 1}"
+          val invoiceNumber = s"$invoiceNumberPrefix${totalInvoices + index + 1}"
           val invoiceDate = toDateStr(dateTimeRange.last)
           val duDate = toDateStr(addDate(dateTimeRange.last, 30)) // plus one month
           val note = s"${toTimeStr(dateTimeRange.head)} TO ${toTimeStr(dateTimeRange.last)}"

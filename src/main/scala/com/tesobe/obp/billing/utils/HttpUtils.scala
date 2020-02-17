@@ -4,10 +4,13 @@ import com.tesobe.obp.billing.auth.PagingResponse
 import com.tesobe.obp.billing.utils.Props.getProperty
 import net.liftweb.json
 import scalaj.http._
+
 object HttpUtils {
   implicit val formats = net.liftweb.json.DefaultFormats
 
   private val token = {
+    println("Fetching obp token.")
+
     val username = getProperty("obp.username")
     val password = getProperty("obp.password")
     val consumerKey = getProperty("obp.consumerKey")
@@ -18,8 +21,12 @@ object HttpUtils {
       .header("Authorization", authorizationHeader).postData("")
       .timeout(connTimeoutMs = 10000, readTimeoutMs = 10000)
       .asString.body
-    json.parse(body).extract[Map[String, String]]
+    val obpToken = json.parse(body).extract[Map[String, String]]
       .getOrElse("token", throw new IllegalArgumentException(s"login fail, please check login parameters.Authorization: $authorizationHeader"))
+
+    println(s"Got obp token: $obpToken")
+
+    obpToken
   }
 
   val product_key = getProperty("ninja.api.invoice.item.product_key")
@@ -60,7 +67,7 @@ object HttpUtils {
     val pagedParam = params :+ ("per_page" -> pageSize)
     val firstPage: T = getNinjaJson[T](relativeUrl, pagedParam)
     val firstData = firstPage.data
-    firstPage.pageRange(pageSize).tail.foldLeft(firstData){ (data, page) =>
+    firstPage.pageRange(pageSize).tail.foldLeft(firstData) { (data, page) =>
       val nextPage = "page" -> page
       val nextData: List[D] = getNinjaJson[T](relativeUrl, pagedParam :+ nextPage).data
 
@@ -74,7 +81,7 @@ object HttpUtils {
     val pagedParam = params :+ ("per_page" -> pageSize)
     val firstPage: T = getNinjaJson[T](relativeUrl, pagedParam)
     val firstData = firstPage.data.collect(pf)
-    firstPage.pageRange(pageSize).tail.foldLeft(firstData){ (data, page) =>
+    firstPage.pageRange(pageSize).tail.foldLeft(firstData) { (data, page) =>
       val nextPage = "page" -> page
       val nextData: List[E] = getNinjaJson[T](relativeUrl, pagedParam :+ nextPage).data.collect(pf)
 
@@ -88,17 +95,18 @@ object HttpUtils {
                                                                                          (predicate: D => Boolean): Option[D] = {
     val pagedParam = params :+ ("per_page" -> pageSize)
     val firstPage: T = getNinjaJson[T](relativeUrl, pagedParam)
-    val isMatched: D => Boolean = it => ! it.is_deleted && predicate(it)
+    val isMatched: D => Boolean = it => !it.is_deleted && predicate(it)
     val firstMatch: Option[D] = firstPage.data.find(isMatched)
-    firstPage.pageRange(pageSize).tail.foldLeft(firstMatch){ (data, page) => data match {
-      case Some(_) => data
-      case _ => {
-        val nextPage = "page" -> page
-        val nextData: List[D] = getNinjaJson[T](relativeUrl, pagedParam :+ nextPage).data
+    firstPage.pageRange(pageSize).tail.foldLeft(firstMatch) { (data, page) =>
+      data match {
+        case Some(_) => data
+        case _ => {
+          val nextPage = "page" -> page
+          val nextData: List[D] = getNinjaJson[T](relativeUrl, pagedParam :+ nextPage).data
 
-        nextData.find(isMatched)
+          nextData.find(isMatched)
+        }
       }
-    }
     }
   }
 
@@ -113,7 +121,7 @@ object HttpUtils {
       None
     } else {
       val firstPageData = firstPage.data.filterNot(_.is_deleted)
-      val first: D = if(firstPageData.isEmpty) {
+      val first: D = if (firstPageData.isEmpty) {
         null.asInstanceOf[D]
       } else {
         firstPageData.reduceLeft(op)
@@ -122,7 +130,7 @@ object HttpUtils {
         .foldLeft(first) { (data, page) => {
           val nextPage = "page" -> page
           val nextData: List[D] = getNinjaJson[T](relativeUrl, pagedParam :+ nextPage).data.filterNot(_.is_deleted)
-          nextData.foldLeft(data)((pre, cur) => if(pre == null) cur else op(pre, cur))
+          nextData.foldLeft(data)((pre, cur) => if (pre == null) cur else op(pre, cur))
         }
         }
 
@@ -130,22 +138,23 @@ object HttpUtils {
     }
   }
 
-  def countNinjaElements[D <: {def is_deleted: Boolean}, T <: PagingResponse[D] : Manifest](relativeUrl: String,
-                                                                                            params: Seq[(String, Any)] = Seq.empty,
-                                                                                            pageSize: Int = 20, includeDeleted: Boolean = true): Int = {
+  def countNinjaElements[D, T <: PagingResponse[D] : Manifest](relativeUrl: String,
+                                                               predicate: D => Boolean = (_: D) => true,
+                                                               params: Seq[(String, Any)] = Seq.empty,
+                                                               pageSize: Int = 20
+                                                               ): Int = {
     val pagedParam = params :+ ("per_page" -> pageSize)
     val firstPage: T = getNinjaJson[T](relativeUrl, pagedParam)
 
     if (firstPage.data.isEmpty) {
       0
     } else {
-      val fun: D => Boolean = includeDeleted || !_.is_deleted
-      val firstCount = firstPage.data.count(fun)
+      val firstCount = firstPage.data.count(predicate)
 
       firstPage.pageRange(pageSize).tail
         .foldLeft(firstCount) { (count, page) => {
           val nextPage = "page" -> page
-          val nextCount = getNinjaJson[T](relativeUrl, pagedParam :+ nextPage).data.count(fun)
+          val nextCount = getNinjaJson[T](relativeUrl, pagedParam :+ nextPage).data.count(predicate)
           count + nextCount
         }
         }
