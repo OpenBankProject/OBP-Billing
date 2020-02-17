@@ -1,22 +1,28 @@
 package com.tesobe.obp.billing.utils
 
-import java.net.URL
-
-import scala.io.{BufferedSource, Source}
+import java.io.{BufferedReader, InputStream, InputStreamReader}
 
 object Props {
   private val props: Map[String, String] = {
     // read application.properties key value, and parse EL express: ${obp.some.xxx}
-    val propertiesFile: URL = this.getClass.getResource("/application.properties")
-    val source: BufferedSource = Source.fromFile(propertiesFile.toURI, "utf-8")
+    val propertiesFileInput: InputStream = this.getClass.getResourceAsStream("/application.properties")
 
-    var rawProps: Map[String, String] = source.getLines()
-      .filterNot(_.startsWith("#"))
-      .filterNot(_.trim.isEmpty)
-      .map(line => {
-        val Array(key, value) = line.split("""\s*=\s*""", 2)
-        (key, value)
-      }).toMap
+    var rawProps: Map[String, String] = try {
+      val reader = new BufferedReader(new InputStreamReader(propertiesFileInput, "utf-8"))
+      val lines: Array[String] = reader.lines()
+        .filter(!_.startsWith("#"))
+        .filter(!_.trim.isEmpty)
+        .toArray(size => new Array[String](size))
+
+        reader.close()
+
+        lines.map(line => {
+          val Array(key, value) = line.split("""\s*=\s*""", 2)
+          (key, value)
+        }).toMap
+    } finally {
+      propertiesFileInput.close()
+    }
 
     val EL = """(?m)(.*?)\$\{(.*?)\}(.*)""".r
 
