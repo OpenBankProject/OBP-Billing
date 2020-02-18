@@ -6,6 +6,7 @@ import java.util.Date
 object DateUtils {
   private val oneDayMs: Long = 24 * 60 * 60 * 1000
   private val dateWithMsFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
+  private val dateTimeFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
   private val dateFormat = new SimpleDateFormat("yyyy-MM-dd")
 
   /**
@@ -45,4 +46,5 @@ object DateUtils {
   def toTimeStr(date: Date): String = dateWithMsFormat.format(date)
   def parseDate(str: String): Date = dateFormat.parse(str)
   def toDateStr(date: Date): String = dateFormat.format(date)
+  def toDateTime(date: Date): String = dateTimeFormat.format(date)
 }

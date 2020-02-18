@@ -62,12 +62,14 @@ object Main {
   def main(args: Array[String]): Unit = {
     println("Fetching all obp consumers.")
     val consumers = getObpJson[List[Consumer]]("management/consumers", "consumers")
+        .filter(it => isNotEmptyStr(it.consumer_id))
     println(s"Got all obp consumers, count: ${consumers.size}")
 
     println("Fetching all exists not deleted Ninja Clients.")
+    val allConsumerId = consumers.map(_.consumer_id).toSet
     // exists client corresponding consumerId, consumerId -> client_id
     val exitsClients = collectNinjaJson[Client, (String, Int), ClientsResponse]("clients") {
-      case client if !client.is_deleted && isNotEmptyStr(client.custom_value1) => client.custom_value1 -> client.id
+      case client if !client.is_deleted && allConsumerId.contains(client.custom_value1) => client.custom_value1 -> client.id
     }.toMap
 
     println(s"Got all exists not deleted Ninja Clients, count: ${exitsClients.size}")
@@ -75,10 +77,7 @@ object Main {
     def isConsumerNoClient(consumerId: String): Boolean = !exitsClients.contains(consumerId)
 
     // do create client
-    val noClientConsumers = consumers.filter(it =>
-        isNotEmptyStr(it.consumer_id) &&
-        isConsumerNoClient(it.consumer_id)
-    )
+    val noClientConsumers = consumers.filter(it => isConsumerNoClient(it.consumer_id))
 
     println(s"Not created Ninja Client corresponding OBP Consumers: ${noClientConsumers.mkString("\n")}")
 
@@ -145,7 +144,7 @@ object Main {
           val invoiceNumber = s"$invoiceNumberPrefix${totalInvoices + index + 1}"
           val invoiceDate = toDateStr(dateTimeRange.last)
           val duDate = toDateStr(addDate(dateTimeRange.last, 30)) // plus one month
-          val note = s"${toTimeStr(dateTimeRange.head)} TO ${toTimeStr(dateTimeRange.last)}"
+          val note = s"${toDateTime(dateTimeRange.head)} TO ${toDateTime(dateTimeRange.last)}"
           val invoice = SimpleInvoice(clientId, invoiceNumber, invoiceDate, duDate, note, consumerId, invoiceItems)
 
           val zson = json.compactRender(json.Extraction.decompose(invoice))
