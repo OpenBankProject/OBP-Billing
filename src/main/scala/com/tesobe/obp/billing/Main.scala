@@ -52,6 +52,7 @@ object Main {
       for {
         (from, to) <- days
         metric = getMetric(from, to)
+        if metric.count > 0
         itemCost = BigDecimal(ninjaProduct.cost) * BigDecimal(metric.count)
         invoiceItem = InvoiceItem(product_key, toDateStr(from), itemCost.toDouble, metric.count)
       } yield invoiceItem
