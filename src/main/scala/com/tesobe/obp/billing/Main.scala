@@ -144,9 +144,11 @@ object Main {
         if (invoiceItems.nonEmpty) {
           val invoiceNumber = s"$invoiceNumberPrefix${totalInvoices + index + 1}"
           val invoiceDate = toDateStr(dateTimeRange.last)
+          // store in field custom_text_value1, to record the created time of invoice
+          val invoiceTime = toTimeStr(dateTimeRange.last)
           val duDate = toDateStr(addDate(dateTimeRange.last, 30)) // plus one month
           val note = s"${toDateTime(dateTimeRange.head)} TO ${toDateTime(dateTimeRange.last)}"
-          val invoice = SimpleInvoice(clientId, invoiceNumber, invoiceDate, duDate, note, consumerId, invoiceItems)
+          val invoice = SimpleInvoice(clientId, invoiceNumber, invoiceDate, duDate, note, invoiceTime, invoiceItems)
 
           val zson = json.compactRender(json.Extraction.decompose(invoice))
           println(s"create invoice: $zson")
