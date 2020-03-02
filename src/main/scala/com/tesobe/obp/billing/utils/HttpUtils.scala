@@ -5,6 +5,8 @@ import com.tesobe.obp.billing.utils.Props.getProperty
 import net.liftweb.json
 import scalaj.http._
 
+import scala.collection.GenTraversable
+
 object HttpUtils {
   implicit val formats = net.liftweb.json.DefaultFormats
 
@@ -33,7 +35,7 @@ object HttpUtils {
 
   def buildObpRequest(relativeUrl: String): HttpRequest = {
     Http(getProperty("obp.api.versionedUrl") + "/" + relativeUrl)
-      .timeout(connTimeoutMs = 10000, readTimeoutMs = 10000)
+      .timeout(connTimeoutMs = 30000, readTimeoutMs = 60000)
       .header("Content-Type", "application/json")
       .header("Authorization", s"""DirectLogin token="$token"""")
   }
@@ -67,7 +69,7 @@ object HttpUtils {
     val pagedParam = params :+ ("per_page" -> pageSize)
     val firstPage: T = getNinjaJson[T](relativeUrl, pagedParam)
     val firstData = firstPage.data
-    firstPage.pageRange(pageSize).tail.foldLeft(firstData) { (data, page) =>
+    foldLeftFromSecond(firstPage.pageRange(pageSize), firstData) { (data, page) =>
       val nextPage = "page" -> page
       val nextData: List[D] = getNinjaJson[T](relativeUrl, pagedParam :+ nextPage).data
 
@@ -81,7 +83,7 @@ object HttpUtils {
     val pagedParam = params :+ ("per_page" -> pageSize)
     val firstPage: T = getNinjaJson[T](relativeUrl, pagedParam)
     val firstData = firstPage.data.collect(pf)
-    firstPage.pageRange(pageSize).tail.foldLeft(firstData) { (data, page) =>
+    foldLeftFromSecond(firstPage.pageRange(pageSize), firstData) { (data, page) =>
       val nextPage = "page" -> page
       val nextData: List[E] = getNinjaJson[T](relativeUrl, pagedParam :+ nextPage).data.collect(pf)
 
@@ -97,7 +99,7 @@ object HttpUtils {
     val firstPage: T = getNinjaJson[T](relativeUrl, pagedParam)
     val isMatched: D => Boolean = it => !it.is_deleted && predicate(it)
     val firstMatch: Option[D] = firstPage.data.find(isMatched)
-    firstPage.pageRange(pageSize).tail.foldLeft(firstMatch) { (data, page) =>
+    foldLeftFromSecond(firstPage.pageRange(pageSize), firstMatch) { (data, page) =>
       data match {
         case Some(_) => data
         case _ => {
@@ -166,4 +168,13 @@ object HttpUtils {
 
   def getObpJson[T: Manifest](relativeUrl: String, datePath: String, params: Seq[(String, String)] = Seq.empty): T =
     requestObpJson[T](relativeUrl, datePath)(_.method("GET").params(params))
+
+
+  private def foldLeftFromSecond[A, B](coll: GenTraversable[A], z: B)(op: (B, A) => B): B = {
+    if(coll == null || coll.isEmpty) {
+      z
+    } else {
+      coll.tail.foldLeft(z)(op)
+    }
+  }
 }

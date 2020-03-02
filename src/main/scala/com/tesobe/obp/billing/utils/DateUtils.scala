@@ -47,4 +47,5 @@ object DateUtils {
   def parseDate(str: String): Date = dateFormat.parse(str)
   def toDateStr(date: Date): String = dateFormat.format(date)
   def toDateTime(date: Date): String = dateTimeFormat.format(date)
+  def parseDateTime(str: String): Date = dateTimeFormat.parse(str)
 }

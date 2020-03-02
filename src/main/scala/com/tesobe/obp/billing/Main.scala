@@ -1,11 +1,12 @@
 package com.tesobe.obp.billing
 
 import java.util.Date
+import java.util.concurrent.atomic.AtomicLong
 
 import com.tesobe.obp.billing.auth._
 import com.tesobe.obp.billing.utils.DateUtils._
 import com.tesobe.obp.billing.utils.HttpUtils.{buildNinjaRequest, collectNinjaJson, countNinjaElements, findOneNinjaJson, getObpJson, product_key, reduceLeftNinjaJson}
-import com.tesobe.obp.billing.utils.StringUtils.{decorateJsonValue, isNotEmptyStr, isEmptyStr}
+import com.tesobe.obp.billing.utils.StringUtils.{decorateJsonValue, isNotEmptyStr}
 import net.liftweb.json
 import net.liftweb.json.JInt
 
@@ -42,7 +43,7 @@ object Main {
       println(s"Fetched metrics: $metrics")
       metrics.head
     }
-
+    println(s"Fetching range day of metrics......")
     val totalMetric = getMetric(dateTimeRange.head, dateTimeRange.last)
     if (totalMetric.count == 0) {
       Nil
@@ -55,7 +56,10 @@ object Main {
         if metric.count > 0
         itemCost = BigDecimal(ninjaProduct.cost) * BigDecimal(metric.count)
         invoiceItem = InvoiceItem(product_key, toDateStr(from), itemCost.toDouble, metric.count)
-      } yield invoiceItem
+      } yield {
+        Thread.sleep(100) // if request obp-api too fast, will block until request timeout
+        invoiceItem
+      }
     }
   }
 
@@ -130,8 +134,8 @@ object Main {
       println(s"start process of create invoice.")
       val invoiceNumberPrefix = "OBP-"
       val totalInvoices: Int = countNinjaElements[Invoice, InvoicesResponse]("invoices", _.invoice_number.startsWith(invoiceNumberPrefix))
-
-      for (((consumerId, clientId), index) <- consumerIdToClientId.view.zipWithIndex) {
+      val invoiceNumberBuilder = new AtomicLong(totalInvoices)
+      for ((consumerId, clientId)<- consumerIdToClientId) {
         val newestInvoice = reduceLeftNinjaJson[Invoice, InvoicesResponse]("invoices", List("client_id" -> clientId))(getNewerInvoice)
         val fromDate: Date = newestInvoice match {
           case Some(invoice) if isTimeStr(invoice.custom_text_value1) => parseTime(invoice.custom_text_value1)
@@ -142,7 +146,7 @@ object Main {
 
         val invoiceItems: List[InvoiceItem] = buildInvoiceItems(dateTimeRange, consumerId, ninjaProduct)
         if (invoiceItems.nonEmpty) {
-          val invoiceNumber = s"$invoiceNumberPrefix${totalInvoices + index + 1}"
+          val invoiceNumber = s"$invoiceNumberPrefix${invoiceNumberBuilder.incrementAndGet()}"
           val invoiceDate = toDateStr(dateTimeRange.last)
           // store in field custom_text_value1, to record the created time of invoice
           val invoiceTime = toTimeStr(dateTimeRange.last)
