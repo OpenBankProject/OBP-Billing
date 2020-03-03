@@ -5,7 +5,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 import com.tesobe.obp.billing.auth._
 import com.tesobe.obp.billing.utils.DateUtils._
-import com.tesobe.obp.billing.utils.HttpUtils.{buildNinjaRequest, collectNinjaJson, countNinjaElements, findOneNinjaJson, getObpJson, product_key, reduceLeftNinjaJson}
+import com.tesobe.obp.billing.utils.HttpUtils.{buildNinjaRequest, collectNinjaJson, foldLeftNinjaElements, findOneNinjaJson, getObpJson, product_key, reduceLeftNinjaJson}
 import com.tesobe.obp.billing.utils.StringUtils.{decorateJsonValue, isNotEmptyStr}
 import net.liftweb.json
 import net.liftweb.json.JInt
@@ -133,8 +133,16 @@ object Main {
     {
       println(s"start process of create invoice.")
       val invoiceNumberPrefix = "OBP-"
-      val totalInvoices: Int = countNinjaElements[Invoice, InvoicesResponse]("invoices", _.invoice_number.startsWith(invoiceNumberPrefix))
-      val invoiceNumberBuilder = new AtomicLong(totalInvoices)
+      val newestInvoice: Option[Invoice] = foldLeftNinjaElements[Invoice, InvoicesResponse]("invoices", _.invoice_number.startsWith(invoiceNumberPrefix)){ (pre, cur) =>
+        val preNumber = pre.invoice_number.replace(invoiceNumberPrefix, "").toLong
+        val curNumber = cur.invoice_number.replace(invoiceNumberPrefix, "").toLong
+        if(preNumber > curNumber) pre else cur
+      }
+      val initInvoiceNumber = newestInvoice.map(_.invoice_number.replace(invoiceNumberPrefix, "").toLong).getOrElse(0L)
+
+      println(s"Current newest invoice_number: $invoiceNumberPrefix$initInvoiceNumber")
+
+      val invoiceNumberBuilder = new AtomicLong(initInvoiceNumber)
       for ((consumerId, clientId)<- consumerIdToClientId) {
         val newestInvoice = reduceLeftNinjaJson[Invoice, InvoicesResponse]("invoices", List("client_id" -> clientId))(getNewerInvoice)
         val fromDate: Date = newestInvoice match {

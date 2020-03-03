@@ -3,12 +3,13 @@ package com.tesobe.obp.billing.utils
 import com.tesobe.obp.billing.auth.PagingResponse
 import com.tesobe.obp.billing.utils.Props.getProperty
 import net.liftweb.json
+import net.liftweb.json.DefaultFormats
 import scalaj.http._
 
 import scala.collection.GenTraversable
 
 object HttpUtils {
-  implicit val formats = net.liftweb.json.DefaultFormats
+  implicit val formats: DefaultFormats.type = net.liftweb.json.DefaultFormats
 
   private val token = {
     println("Fetching obp token.")
@@ -31,7 +32,7 @@ object HttpUtils {
     obpToken
   }
 
-  val product_key = getProperty("ninja.api.invoice.item.product_key")
+  val product_key: String = getProperty("ninja.api.invoice.item.product_key")
 
   def buildObpRequest(relativeUrl: String): HttpRequest = {
     Http(getProperty("obp.api.versionedUrl") + "/" + relativeUrl)
@@ -102,12 +103,11 @@ object HttpUtils {
     foldLeftFromSecond(firstPage.pageRange(pageSize), firstMatch) { (data, page) =>
       data match {
         case Some(_) => data
-        case _ => {
+        case _ =>
           val nextPage = "page" -> page
           val nextData: List[D] = getNinjaJson[T](relativeUrl, pagedParam :+ nextPage).data
 
           nextData.find(isMatched)
-        }
       }
     }
   }
@@ -140,26 +140,31 @@ object HttpUtils {
     }
   }
 
-  def countNinjaElements[D, T <: PagingResponse[D] : Manifest](relativeUrl: String,
-                                                               predicate: D => Boolean = (_: D) => true,
-                                                               params: Seq[(String, Any)] = Seq.empty,
-                                                               pageSize: Int = 20
-                                                               ): Int = {
+  def foldLeftNinjaElements[D, T <: PagingResponse[D] : Manifest](relativeUrl: String,
+                                                                  predicate: D => Boolean = (_: D) => true,
+                                                                  params: Seq[(String, Any)] = Seq.empty,
+                                                                  pageSize: Int = 20
+                                                                 )(f: (D, D) => D): Option[D] = {
     val pagedParam = params :+ ("per_page" -> pageSize)
     val firstPage: T = getNinjaJson[T](relativeUrl, pagedParam)
 
     if (firstPage.data.isEmpty) {
-      0
+      None
     } else {
-      val firstCount = firstPage.data.count(predicate)
+      def foldFunction(pre: Option[D], cur: D): Option[D] = pre match {
+        case None => Option(cur)
+        case Some(v) => Option(f(v, cur))
+      }
 
-      firstPage.pageRange(pageSize).tail
-        .foldLeft(firstCount) { (count, page) => {
+      def initValue: Option[D] = None
+
+      val firstPageFoundValue = firstPage.data.filter(predicate).foldLeft(initValue)(foldFunction)
+
+      foldLeftFromSecond(firstPage.pageRange(pageSize), firstPageFoundValue) { (preValue, page) => {
           val nextPage = "page" -> page
-          val nextCount = getNinjaJson[T](relativeUrl, pagedParam :+ nextPage).data.count(predicate)
-          count + nextCount
+          getNinjaJson[T](relativeUrl, pagedParam :+ nextPage).data.filter(predicate).foldLeft(preValue)(foldFunction)
         }
-        }
+      }
     }
   }
 
