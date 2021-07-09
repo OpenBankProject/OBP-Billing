@@ -16,4 +16,4 @@ API Consumer makes the payment using the (5) *Payment System* (e.g. Stripe) whic
 
 Periodically, the OBP Billing App queries the Accounting system API and blocks API overdue Consumers via the OBP Rate Limiting and Consumer APIs.
 
-(OBP Monetisation, Billing and Rate Limiting)[https://user-images.githubusercontent.com/485218/74542852-ac946c00-4f44-11ea-9ac7-58a2b1453fa4.png]
+![OBP API Monetisation, Billing and Rate Limiting](https://user-images.githubusercontent.com/485218/74542852-ac946c00-4f44-11ea-9ac7-58a2b1453fa4.png)
